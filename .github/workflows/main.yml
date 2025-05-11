@@ -30,7 +30,7 @@ jobs:
       - name: Prepare Summary File
         run: |
           BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
-          echo "# Báo cáo cập nhật Cloudflare Gateway filter lists" > $SUMMARY_FILE
+          echo "Báo cáo cập nhật Cloudflare Gateway filter lists" > $SUMMARY_FILE
           echo "Thời gian bắt đầu: $BANGKOK_DATE (UTC+7)" >> $SUMMARY_FILE
           echo "----------------------------" >> $SUMMARY_FILE
 

@@ -56,18 +56,66 @@ jobs:
             -d text="✅ Đã cài đặt các dependencies vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
 
+      - name: Debug Script Installation
+        run: |
+          # Create a debug script to analyze log output and extract numbers
+          cat > /tmp/extract_numbers.sh << 'EOL'
+          #!/bin/bash
+          
+          # Function to extract numbers with fallback values
+          extract_number() {
+            local OUTPUT="$1"
+            local PATTERN="$2"
+            local DEFAULT="$3"
+            
+            # Try multiple patterns to be more flexible
+            local NUMBER=""
+            
+            # Pattern 1: Number followed by pattern
+            NUMBER=$(echo "$OUTPUT" | grep -E "$PATTERN" | grep -oE '[0-9]+' | head -1)
+            
+            # Pattern 2: Try to find pattern containing digits
+            if [ -z "$NUMBER" ]; then
+              NUMBER=$(echo "$OUTPUT" | grep -E "$PATTERN" | head -1 | grep -oE '[0-9]+')
+            fi
+            
+            # Pattern 3: More general search
+            if [ -z "$NUMBER" ]; then
+              NUMBER=$(echo "$OUTPUT" | grep -iE "domain|list|rule" | grep -oE '[0-9]+' | head -1)
+            fi
+            
+            # Return result or default
+            if [ -z "$NUMBER" ]; then
+              echo "$DEFAULT"
+            else
+              echo "$NUMBER"
+            fi
+          }
+          
+          # Export the function to make it available for calling scripts
+          export -f extract_number
+          EOL
+          
+          chmod +x /tmp/extract_numbers.sh
+          source /tmp/extract_numbers.sh
+
       - name: Download allowlists
         id: download-allowlist
         run: |
+          # Source the helper script
+          source /tmp/extract_numbers.sh
+          
           # Capture output for analysis
           OUTPUT=$(npm run download:allowlist 2>&1)
           echo "$OUTPUT"
           
-          # Extract domain count (adjust the grep pattern based on actual output)
-          ALLOWLIST_COUNT=$(echo "$OUTPUT" | grep -oE "[0-9]+ domains" | grep -oE "[0-9]+" | head -1)
-          if [ -z "$ALLOWLIST_COUNT" ]; then
-            ALLOWLIST_COUNT="không xác định"
-          fi
+          # Save the raw output for debugging
+          echo "$OUTPUT" > /tmp/allowlist_output.log
+          echo "Raw log output saved to /tmp/allowlist_output.log"
+          
+          # Extract domain count with more flexible patterns
+          ALLOWLIST_COUNT=$(extract_number "$OUTPUT" "domain|allowlist" "0")
+          echo "Detected allowlist count: $ALLOWLIST_COUNT"
           
           # Add to summary
           echo "Allowlist domains: $ALLOWLIST_COUNT" >> $SUMMARY_FILE
@@ -87,15 +135,20 @@ jobs:
       - name: Download blocklists
         id: download-blocklist
         run: |
+          # Source the helper script
+          source /tmp/extract_numbers.sh
+          
           # Capture output for analysis
           OUTPUT=$(npm run download:blocklist 2>&1)
           echo "$OUTPUT"
           
-          # Extract domain count (adjust the grep pattern based on actual output)
-          BLOCKLIST_COUNT=$(echo "$OUTPUT" | grep -oE "[0-9]+ domains" | grep -oE "[0-9]+" | head -1)
-          if [ -z "$BLOCKLIST_COUNT" ]; then
-            BLOCKLIST_COUNT="không xác định"
-          fi
+          # Save the raw output for debugging
+          echo "$OUTPUT" > /tmp/blocklist_output.log
+          echo "Raw log output saved to /tmp/blocklist_output.log"
+          
+          # Extract domain count with more flexible patterns
+          BLOCKLIST_COUNT=$(extract_number "$OUTPUT" "domain|blocklist" "0")
+          echo "Detected blocklist count: $BLOCKLIST_COUNT"
           
           # Add to summary
           echo "Blocklist domains: $BLOCKLIST_COUNT" >> $SUMMARY_FILE
@@ -115,16 +168,23 @@ jobs:
       - name: Delete old rules and lists
         id: delete-rules
         run: |
+          # Source the helper script
+          source /tmp/extract_numbers.sh
+          
           # Capture output for analysis
           OUTPUT=$(npm run cloudflare-delete 2>&1)
           echo "$OUTPUT"
           
-          # Extract information (adjust the grep patterns based on actual output)
-          DELETED_LISTS=$(echo "$OUTPUT" | grep -oE "Deleted [0-9]+ lists" | grep -oE "[0-9]+" | head -1)
-          if [ -z "$DELETED_LISTS" ]; then DELETED_LISTS="0"; fi
+          # Save the raw output for debugging
+          echo "$OUTPUT" > /tmp/delete_output.log
+          echo "Raw log output saved to /tmp/delete_output.log"
           
-          DELETED_RULES=$(echo "$OUTPUT" | grep -oE "Deleted [0-9]+ rules" | grep -oE "[0-9]+" | head -1)
-          if [ -z "$DELETED_RULES" ]; then DELETED_RULES="0"; fi
+          # Extract information with more flexible patterns
+          DELETED_LISTS=$(extract_number "$OUTPUT" "list|deleted" "0")
+          echo "Detected deleted lists: $DELETED_LISTS"
+          
+          DELETED_RULES=$(extract_number "$OUTPUT" "rule|deleted" "0")
+          echo "Detected deleted rules: $DELETED_RULES"
           
           # Add to summary
           echo "Deleted lists: $DELETED_LISTS" >> $SUMMARY_FILE
@@ -150,19 +210,26 @@ jobs:
       - name: Create new rules and lists
         id: create-rules
         run: |
+          # Source the helper script
+          source /tmp/extract_numbers.sh
+          
           # Capture output for analysis
           OUTPUT=$(npm run cloudflare-create 2>&1)
           echo "$OUTPUT"
           
-          # Extract information (adjust the grep patterns based on actual output)
-          CREATED_LISTS=$(echo "$OUTPUT" | grep -oE "Created [0-9]+ lists" | grep -oE "[0-9]+" | head -1)
-          if [ -z "$CREATED_LISTS" ]; then CREATED_LISTS="0"; fi
+          # Save the raw output for debugging
+          echo "$OUTPUT" > /tmp/create_output.log
+          echo "Raw log output saved to /tmp/create_output.log"
           
-          CREATED_RULES=$(echo "$OUTPUT" | grep -oE "Created [0-9]+ rules" | grep -oE "[0-9]+" | head -1)
-          if [ -z "$CREATED_RULES" ]; then CREATED_RULES="0"; fi
+          # Extract information with more flexible patterns
+          CREATED_LISTS=$(extract_number "$OUTPUT" "list|created" "0")
+          echo "Detected created lists: $CREATED_LISTS"
           
-          ADDED_DOMAINS=$(echo "$OUTPUT" | grep -oE "Added [0-9]+ domains" | grep -oE "[0-9]+" | head -1)
-          if [ -z "$ADDED_DOMAINS" ]; then ADDED_DOMAINS="0"; fi
+          CREATED_RULES=$(extract_number "$OUTPUT" "rule|created" "0")
+          echo "Detected created rules: $CREATED_RULES"
+          
+          ADDED_DOMAINS=$(extract_number "$OUTPUT" "domain|added" "0")
+          echo "Detected added domains: $ADDED_DOMAINS"
           
           # Add to summary
           echo "Created lists: $CREATED_LISTS" >> $SUMMARY_FILE
@@ -188,6 +255,18 @@ jobs:
             -d text="🆕 Đã tạo $CREATED_LISTS lists, $CREATED_RULES rules và thêm $ADDED_DOMAINS domains vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
 
+      - name: Upload Log Files as Artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: log-outputs
+          path: |
+            /tmp/allowlist_output.log
+            /tmp/blocklist_output.log
+            /tmp/delete_output.log
+            /tmp/create_output.log
+            /tmp/filter_update_summary.txt
+
       - name: Generate Final Summary
         if: always()
         run: |
@@ -196,11 +275,7 @@ jobs:
           echo "Thời gian hoàn thành: $BANGKOK_DATE (UTC+7)" >> $SUMMARY_FILE
           echo "Trạng thái: ${{ job.status }}" >> $SUMMARY_FILE
           
-          # Calculate execution time if possible
-          START_TIME=$(grep "Thời gian bắt đầu" $SUMMARY_FILE | cut -d ":" -f2- | sed 's/^[ ]*//')
-          END_TIME=$(grep "Thời gian hoàn thành" $SUMMARY_FILE | cut -d ":" -f2- | sed 's/^[ ]*//')
-          
-          # Format summary for Telegram (using Markdown)
+          # Format summary for Telegram
           SUMMARY=$(cat $SUMMARY_FILE)
           
           if [[ "${{ job.status }}" == "success" ]]; then
@@ -211,10 +286,13 @@ jobs:
             STATUS_TEXT="thất bại"
           fi
           
-          MESSAGE="$STATUS_EMOJI Quá trình cập nhật Cloudflare Gateway filter lists đã $STATUS_TEXT
-          
-          # Save the final message
-          echo "$MESSAGE" > /tmp/final_message.txt
+          # Fix: Simplify message creation by using single quotes and avoiding backticks in YAML
+          echo "${STATUS_EMOJI} Quá trình cập nhật Cloudflare Gateway filter lists đã ${STATUS_TEXT}" > /tmp/final_message.txt
+          echo "" >> /tmp/final_message.txt  # Empty line
+          echo "📊 *Báo cáo tóm tắt:*" >> /tmp/final_message.txt
+          echo '```' >> /tmp/final_message.txt  # Use single quotes to avoid YAML issues
+          cat $SUMMARY_FILE >> /tmp/final_message.txt
+          echo '```' >> /tmp/final_message.txt  # Use single quotes to avoid YAML issues
 
       - name: Send Final Summary
         if: always()

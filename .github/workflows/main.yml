@@ -2,7 +2,8 @@ name: Update Filter Lists
 
 on:
   schedule:
-    - cron: "0 0 * * */3"
+    # Run at 00:00 UTC every 3 days
+    - cron: "0 0 */3 * *"
   push:
     branches:
       - main
@@ -24,6 +25,16 @@ jobs:
         with:
           repository: "mrrfv/cloudflare-gateway-pihole-scripts"
           ref: "v1"
+          
+      - name: Send Start Notification
+        run: |
+          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          MESSAGE="🔄 Bắt đầu cập nhật Cloudflare Gateway filter lists vào $BANGKOK_DATE (UTC+7)"
+          
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+            -d text="$MESSAGE" \
+            -d parse_mode=HTML
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -31,20 +42,77 @@ jobs:
           node-version-file: ".node-version"
 
       - name: Install npm dependencies
-        run: npm ci
+        id: npm-install
+        run: |
+          echo "::group::Installing dependencies"
+          npm ci
+          echo "::endgroup::"
+          
+          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          MESSAGE="✅ Đã cài đặt các dependencies vào $BANGKOK_DATE (UTC+7)"
+          
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+            -d text="$MESSAGE" \
+            -d parse_mode=HTML
 
       - name: Download allowlists
-        run: npm run download:allowlist
+        id: download-allowlist
+        run: |
+          echo "::group::Downloading allowlists"
+          npm run download:allowlist
+          echo "::endgroup::"
+          
+          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          MESSAGE="📥 Đã tải xuống allowlists vào $BANGKOK_DATE (UTC+7)"
+          
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+            -d text="$MESSAGE" \
+            -d parse_mode=HTML
         env:
           ALLOWLIST_URLS: ${{ vars.ALLOWLIST_URLS }}
 
       - name: Download blocklists
-        run: npm run download:blocklist
+        id: download-blocklist
+        run: |
+          echo "::group::Downloading blocklists"
+          npm run download:blocklist
+          echo "::endgroup::"
+          
+          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          MESSAGE="📥 Đã tải xuống blocklists vào $BANGKOK_DATE (UTC+7)"
+          
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+            -d text="$MESSAGE" \
+            -d parse_mode=HTML
         env:
           BLOCKLIST_URLS: ${{ vars.BLOCKLIST_URLS }}
 
       - name: Delete old rules and lists
-        run: npm run cloudflare-delete
+        id: delete-rules
+        run: |
+          echo "::group::Deleting old rules and lists"
+          LOG_OUTPUT=$(npm run cloudflare-delete 2>&1)
+          echo "$LOG_OUTPUT"
+          echo "::endgroup::"
+          
+          # Extract useful information from logs (adjust pattern as needed)
+          SUMMARY=$(echo "$LOG_OUTPUT" | grep -E "Deleted|Removed|lists" | head -n 5)
+          
+          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          MESSAGE="🗑️ Đã xóa rules và lists cũ vào $BANGKOK_DATE (UTC+7)
+          
+Thông tin:
+\`\`\`
+$SUMMARY
+\`\`\`"
+          
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+            -d text="$MESSAGE" \
+            -d parse_mode=Markdown
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -53,7 +121,28 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Create new rules and lists
-        run: npm run cloudflare-create
+        id: create-rules
+        run: |
+          echo "::group::Creating new rules and lists"
+          LOG_OUTPUT=$(npm run cloudflare-create 2>&1)
+          echo "$LOG_OUTPUT"
+          echo "::endgroup::"
+          
+          # Extract useful information from logs (adjust pattern as needed)
+          SUMMARY=$(echo "$LOG_OUTPUT" | grep -E "Created|Added|lists|domains" | head -n 5)
+          
+          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          MESSAGE="🆕 Đã tạo rules và lists mới vào $BANGKOK_DATE (UTC+7)
+          
+Thông tin:
+\`\`\`
+$SUMMARY
+\`\`\`"
+          
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+            -d text="$MESSAGE" \
+            -d parse_mode=Markdown
         env:
           BLOCK_PAGE_ENABLED: ${{ vars.BLOCK_PAGE_ENABLED }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -62,13 +151,15 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-      - name: Send Telegram notification
+      - name: Send Final Notification
         if: always()
         run: |
+          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          
           if [[ "${{ job.status }}" == "success" ]]; then
-            MESSAGE="✅ Successfully updated Cloudflare Gateway filter lists on $(date)"
+            MESSAGE="✅ Hoàn thành cập nhật Cloudflare Gateway filter lists vào $BANGKOK_DATE (UTC+7)"
           else
-            MESSAGE="⚠️ Failed to update Cloudflare Gateway filter lists on $(date)"
+            MESSAGE="⚠️ Không thể cập nhật Cloudflare Gateway filter lists vào $BANGKOK_DATE (UTC+7)"
           fi
           
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \

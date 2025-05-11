@@ -102,16 +102,21 @@ jobs:
           SUMMARY=$(echo "$LOG_OUTPUT" | grep -E "Deleted|Removed|lists" | head -n 5)
           
           BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
-          MESSAGE="🗑️ Đã xóa rules và lists cũ vào $BANGKOK_DATE (UTC+7)
+          
+          # Viết nội dung tin nhắn vào file tạm
+          cat > telegram_message.txt << EOL
+🗑️ Đã xóa rules và lists cũ vào $BANGKOK_DATE (UTC+7)
 
 Thông tin:
 \`\`\`
 $SUMMARY
-\`\`\`"
+\`\`\`
+EOL
           
+          # Gửi nội dung tin nhắn từ file
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="$MESSAGE" \
+            -d text="$(cat telegram_message.txt)" \
             -d parse_mode=Markdown
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -132,16 +137,21 @@ $SUMMARY
           SUMMARY=$(echo "$LOG_OUTPUT" | grep -E "Created|Added|lists|domains" | head -n 5)
           
           BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
-          MESSAGE="🆕 Đã tạo rules và lists mới vào $BANGKOK_DATE (UTC+7)
+          
+          # Viết nội dung tin nhắn vào file tạm
+          cat > telegram_message.txt << EOL
+🆕 Đã tạo rules và lists mới vào $BANGKOK_DATE (UTC+7)
 
 Thông tin:
 \`\`\`
 $SUMMARY
-\`\`\`"
+\`\`\`
+EOL
           
+          # Gửi nội dung tin nhắn từ file
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="$MESSAGE" \
+            -d text="$(cat telegram_message.txt)" \
             -d parse_mode=Markdown
         env:
           BLOCK_PAGE_ENABLED: ${{ vars.BLOCK_PAGE_ENABLED }}

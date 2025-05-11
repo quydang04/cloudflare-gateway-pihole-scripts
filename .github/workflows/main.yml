@@ -56,80 +56,42 @@ jobs:
             -d text="✅ Đã cài đặt các dependencies vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
 
-      - name: Debug Script Installation
-        run: |
-          # Create a debug script to analyze log output and extract numbers
-          cat > /tmp/extract_numbers.sh << 'EOL'
-          #!/bin/bash
-          
-          # Function to extract numbers with fallback values
-          extract_number() {
-            local OUTPUT="$1"
-            local PATTERN="$2"
-            local DEFAULT="$3"
-            
-            # Try multiple patterns to be more flexible
-            local NUMBER=""
-            
-            # Pattern 1: Number followed by pattern
-            NUMBER=$(echo "$OUTPUT" | grep -E "$PATTERN" | grep -oE '[0-9]+' | head -1)
-            
-            # Pattern 2: Try to find pattern containing digits
-            if [ -z "$NUMBER" ]; then
-              NUMBER=$(echo "$OUTPUT" | grep -E "$PATTERN" | head -1 | grep -oE '[0-9]+')
-            fi
-            
-            # Pattern 3: More general search
-            if [ -z "$NUMBER" ]; then
-              NUMBER=$(echo "$OUTPUT" | grep -iE "filter|list|rule" | grep -oE '[0-9]+' | head -1)
-            fi
-            
-            # Return result or default
-            if [ -z "$NUMBER" ]; then
-              echo "$DEFAULT"
-            else
-              echo "$NUMBER"
-            fi
-          }
-          
-          # Export the function to make it available for calling scripts
-          export -f extract_number
-          EOL
-          
-          chmod +x /tmp/extract_numbers.sh
-          source /tmp/extract_numbers.sh
-
       - name: Download allowlists
         id: download-allowlist
         run: |
-          # Source the helper script
-          source /tmp/extract_numbers.sh
+          # Thực hiện download allowlist
+          npm run download:allowlist
           
-          # Capture output for analysis
-          OUTPUT=$(npm run download:allowlist 2>&1)
-          echo "$OUTPUT"
+          # Đếm số lượng filter trong allowlist bằng cách đếm số dòng trong file
+          if [ -f "./allowlist.txt" ]; then
+            FILTER_COUNT=$(wc -l < ./allowlist.txt | tr -d ' ')
+          elif [ -f "./output/allowlist.txt" ]; then
+            FILTER_COUNT=$(wc -l < ./output/allowlist.txt | tr -d ' ')
+          elif [ -f "./dist/allowlist.txt" ]; then
+            FILTER_COUNT=$(wc -l < ./dist/allowlist.txt | tr -d ' ')
+          else
+            # Tìm bất kỳ file nào có tên chứa "allowlist"
+            ALLOWLIST_FILE=$(find . -name "*allowlist*" -type f | head -n 1)
+            if [ -n "$ALLOWLIST_FILE" ]; then
+              FILTER_COUNT=$(wc -l < "$ALLOWLIST_FILE" | tr -d ' ')
+            else
+              FILTER_COUNT="0"
+            fi
+          fi
           
-          # Save the raw output for debugging
-          echo "$OUTPUT" > /tmp/allowlist_output.log
-          echo "Raw log output saved to /tmp/allowlist_output.log"
-          
-          # Extract filter count with more robust pattern matching
-          ALLOWLIST_COUNT=$(extract_number "$OUTPUT" "filter|allowlist" "0")
-          echo "Detected allowlist count: $ALLOWLIST_COUNT"
-          
-          # Add to summary
-          echo "Allowlist filters: $ALLOWLIST_COUNT" >> $SUMMARY_FILE
+          # Lưu số lượng filter vào biến môi trường và summary
+          echo "ALLOWLIST_COUNT=$FILTER_COUNT" >> $GITHUB_ENV
+          echo "Allowlist filters: $FILTER_COUNT" >> $SUMMARY_FILE
         env:
           ALLOWLIST_URLS: ${{ vars.ALLOWLIST_URLS }}
 
       - name: Notify Allowlists Downloaded
         run: |
           BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%d/%m/%Y %H:%M:%S")
-          ALLOWLIST_COUNT=$(grep "Allowlist filters" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
           
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="📥 Đã tải xuống $ALLOWLIST_COUNT filters trong allowlists vào $BANGKOK_DATE (UTC+7)" \
+            -d text="📥 Đã tải xuống ${{ env.ALLOWLIST_COUNT }} filters trong allowlists vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
 
       - name: Download blocklists
@@ -147,10 +109,11 @@ jobs:
           echo "Raw log output saved to /tmp/blocklist_output.log"
           
           # Extract filter count with more flexible patterns
-          BLOCKLIST_COUNT=$(extract_number "$OUTPUT" "filter|blocklist" "0")
+          BLOCKLIST_COUNT=$(extract_number "$OUTPUT" "domain|blocklist" "0")
           echo "Detected blocklist count: $BLOCKLIST_COUNT"
           
           # Add to summary
+          echo "BLOCKLIST_COUNT=$BLOCKLIST_COUNT" >> $GITHUB_ENV
           echo "Blocklist filters: $BLOCKLIST_COUNT" >> $SUMMARY_FILE
         env:
           BLOCKLIST_URLS: ${{ vars.BLOCKLIST_URLS }}
@@ -158,11 +121,10 @@ jobs:
       - name: Notify Blocklists Downloaded
         run: |
           BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%d/%m/%Y %H:%M:%S")
-          BLOCKLIST_COUNT=$(grep "Blocklist filters" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
           
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="📥 Đã tải xuống $BLOCKLIST_COUNT filters trong blocklists vào $BANGKOK_DATE (UTC+7)" \
+            -d text="📥 Đã tải xuống ${{ env.BLOCKLIST_COUNT }} filters trong blocklists vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
 
       - name: Delete old rules and lists
@@ -186,7 +148,9 @@ jobs:
           DELETED_RULES=$(extract_number "$OUTPUT" "rule|deleted" "0")
           echo "Detected deleted rules: $DELETED_RULES"
           
-          # Add to summary
+          # Add to summary and environment variables
+          echo "DELETED_LISTS=$DELETED_LISTS" >> $GITHUB_ENV
+          echo "DELETED_RULES=$DELETED_RULES" >> $GITHUB_ENV
           echo "Deleted lists: $DELETED_LISTS" >> $SUMMARY_FILE
           echo "Deleted rules: $DELETED_RULES" >> $SUMMARY_FILE
         env:
@@ -199,12 +163,10 @@ jobs:
       - name: Notify Delete Completed
         run: |
           BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%d/%m/%Y %H:%M:%S")
-          DELETED_LISTS=$(grep "Deleted lists" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
-          DELETED_RULES=$(grep "Deleted rules" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
           
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="🗑️ Đã xóa $DELETED_LISTS lists và $DELETED_RULES rules vào $BANGKOK_DATE (UTC+7)" \
+            -d text="🗑️ Đã xóa ${{ env.DELETED_LISTS }} lists và ${{ env.DELETED_RULES }} rules vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
 
       - name: Create new rules and lists
@@ -228,10 +190,13 @@ jobs:
           CREATED_RULES=$(extract_number "$OUTPUT" "rule|created" "0")
           echo "Detected created rules: $CREATED_RULES"
           
-          ADDED_FILTERS=$(extract_number "$OUTPUT" "filter|added" "0")
+          ADDED_FILTERS=$(extract_number "$OUTPUT" "domain|added" "0")
           echo "Detected added filters: $ADDED_FILTERS"
           
-          # Add to summary
+          # Add to summary and environment variables
+          echo "CREATED_LISTS=$CREATED_LISTS" >> $GITHUB_ENV
+          echo "CREATED_RULES=$CREATED_RULES" >> $GITHUB_ENV
+          echo "ADDED_FILTERS=$ADDED_FILTERS" >> $GITHUB_ENV
           echo "Created lists: $CREATED_LISTS" >> $SUMMARY_FILE
           echo "Created rules: $CREATED_RULES" >> $SUMMARY_FILE
           echo "Added filters: $ADDED_FILTERS" >> $SUMMARY_FILE
@@ -246,16 +211,11 @@ jobs:
       - name: Notify Create Completed
         run: |
           BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%d/%m/%Y %H:%M:%S")
-          CREATED_LISTS=$(grep "Created lists" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
-          CREATED_RULES=$(grep "Created rules" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
-          ADDED_FILTERS=$(grep "Added filters" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
           
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="🆕 Đã tạo $CREATED_LISTS lists, $CREATED_RULES rules và thêm $ADDED_FILTERS filters vào $BANGKOK_DATE (UTC+7)" \
+            -d text="🆕 Đã tạo ${{ env.CREATED_LISTS }} lists, ${{ env.CREATED_RULES }} rules và thêm ${{ env.ADDED_FILTERS }} filters vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
-
-      # Removed problematic upload-artifact step
 
       - name: Generate Final Summary
         if: always()
@@ -266,8 +226,6 @@ jobs:
           echo "Trạng thái: ${{ job.status }}" >> $SUMMARY_FILE
           
           # Format summary for Telegram
-          SUMMARY=$(cat $SUMMARY_FILE)
-          
           if [[ "${{ job.status }}" == "success" ]]; then
             STATUS_EMOJI="✅"
             STATUS_TEXT="hoàn thành"

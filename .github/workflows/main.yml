@@ -29,14 +29,14 @@ jobs:
           
       - name: Prepare Summary File
         run: |
-          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%d/%m/%Y %H:%M:%S")
           echo "Báo cáo cập nhật Cloudflare Gateway filter lists" > $SUMMARY_FILE
           echo "Thời gian bắt đầu: $BANGKOK_DATE (UTC+7)" >> $SUMMARY_FILE
           echo "----------------------------" >> $SUMMARY_FILE
 
       - name: Send Start Notification
         run: |
-          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%d/%m/%Y %H:%M:%S")
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
             -d text="🔄 Bắt đầu cập nhật Cloudflare Gateway filter lists vào $BANGKOK_DATE (UTC+7)" \
@@ -50,7 +50,7 @@ jobs:
       - name: Install npm dependencies
         run: |
           npm ci
-          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%d/%m/%Y %H:%M:%S")
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
             -d text="✅ Đã cài đặt các dependencies vào $BANGKOK_DATE (UTC+7)" \
@@ -81,7 +81,7 @@ jobs:
             
             # Pattern 3: More general search
             if [ -z "$NUMBER" ]; then
-              NUMBER=$(echo "$OUTPUT" | grep -iE "domain|list|rule" | grep -oE '[0-9]+' | head -1)
+              NUMBER=$(echo "$OUTPUT" | grep -iE "filter|list|rule" | grep -oE '[0-9]+' | head -1)
             fi
             
             # Return result or default
@@ -113,23 +113,23 @@ jobs:
           echo "$OUTPUT" > /tmp/allowlist_output.log
           echo "Raw log output saved to /tmp/allowlist_output.log"
           
-          # Extract domain count with more flexible patterns
-          ALLOWLIST_COUNT=$(extract_number "$OUTPUT" "domain|allowlist" "0")
+          # Extract filter count with more robust pattern matching
+          ALLOWLIST_COUNT=$(extract_number "$OUTPUT" "filter|allowlist" "0")
           echo "Detected allowlist count: $ALLOWLIST_COUNT"
           
           # Add to summary
-          echo "Allowlist domains: $ALLOWLIST_COUNT" >> $SUMMARY_FILE
+          echo "Allowlist filters: $ALLOWLIST_COUNT" >> $SUMMARY_FILE
         env:
           ALLOWLIST_URLS: ${{ vars.ALLOWLIST_URLS }}
 
       - name: Notify Allowlists Downloaded
         run: |
-          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
-          ALLOWLIST_COUNT=$(grep "Allowlist domains" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
+          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%d/%m/%Y %H:%M:%S")
+          ALLOWLIST_COUNT=$(grep "Allowlist filters" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
           
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="📥 Đã tải xuống $ALLOWLIST_COUNT domains trong allowlists vào $BANGKOK_DATE (UTC+7)" \
+            -d text="📥 Đã tải xuống $ALLOWLIST_COUNT filters trong allowlists vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
 
       - name: Download blocklists
@@ -146,23 +146,23 @@ jobs:
           echo "$OUTPUT" > /tmp/blocklist_output.log
           echo "Raw log output saved to /tmp/blocklist_output.log"
           
-          # Extract domain count with more flexible patterns
-          BLOCKLIST_COUNT=$(extract_number "$OUTPUT" "domain|blocklist" "0")
+          # Extract filter count with more flexible patterns
+          BLOCKLIST_COUNT=$(extract_number "$OUTPUT" "filter|blocklist" "0")
           echo "Detected blocklist count: $BLOCKLIST_COUNT"
           
           # Add to summary
-          echo "Blocklist domains: $BLOCKLIST_COUNT" >> $SUMMARY_FILE
+          echo "Blocklist filters: $BLOCKLIST_COUNT" >> $SUMMARY_FILE
         env:
           BLOCKLIST_URLS: ${{ vars.BLOCKLIST_URLS }}
 
       - name: Notify Blocklists Downloaded
         run: |
-          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
-          BLOCKLIST_COUNT=$(grep "Blocklist domains" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
+          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%d/%m/%Y %H:%M:%S")
+          BLOCKLIST_COUNT=$(grep "Blocklist filters" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
           
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="📥 Đã tải xuống $BLOCKLIST_COUNT domains trong blocklists vào $BANGKOK_DATE (UTC+7)" \
+            -d text="📥 Đã tải xuống $BLOCKLIST_COUNT filters trong blocklists vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
 
       - name: Delete old rules and lists
@@ -198,7 +198,7 @@ jobs:
 
       - name: Notify Delete Completed
         run: |
-          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%d/%m/%Y %H:%M:%S")
           DELETED_LISTS=$(grep "Deleted lists" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
           DELETED_RULES=$(grep "Deleted rules" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
           
@@ -228,13 +228,13 @@ jobs:
           CREATED_RULES=$(extract_number "$OUTPUT" "rule|created" "0")
           echo "Detected created rules: $CREATED_RULES"
           
-          ADDED_DOMAINS=$(extract_number "$OUTPUT" "domain|added" "0")
-          echo "Detected added domains: $ADDED_DOMAINS"
+          ADDED_FILTERS=$(extract_number "$OUTPUT" "filter|added" "0")
+          echo "Detected added filters: $ADDED_FILTERS"
           
           # Add to summary
           echo "Created lists: $CREATED_LISTS" >> $SUMMARY_FILE
           echo "Created rules: $CREATED_RULES" >> $SUMMARY_FILE
-          echo "Added domains: $ADDED_DOMAINS" >> $SUMMARY_FILE
+          echo "Added filters: $ADDED_FILTERS" >> $SUMMARY_FILE
         env:
           BLOCK_PAGE_ENABLED: ${{ vars.BLOCK_PAGE_ENABLED }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -245,14 +245,14 @@ jobs:
 
       - name: Notify Create Completed
         run: |
-          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%d/%m/%Y %H:%M:%S")
           CREATED_LISTS=$(grep "Created lists" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
           CREATED_RULES=$(grep "Created rules" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
-          ADDED_DOMAINS=$(grep "Added domains" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
+          ADDED_FILTERS=$(grep "Added filters" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
           
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="🆕 Đã tạo $CREATED_LISTS lists, $CREATED_RULES rules và thêm $ADDED_DOMAINS domains vào $BANGKOK_DATE (UTC+7)" \
+            -d text="🆕 Đã tạo $CREATED_LISTS lists, $CREATED_RULES rules và thêm $ADDED_FILTERS filters vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
 
       # Removed problematic upload-artifact step
@@ -260,7 +260,7 @@ jobs:
       - name: Generate Final Summary
         if: always()
         run: |
-          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%d/%m/%Y %H:%M:%S")
           echo "----------------------------" >> $SUMMARY_FILE
           echo "Thời gian hoàn thành: $BANGKOK_DATE (UTC+7)" >> $SUMMARY_FILE
           echo "Trạng thái: ${{ job.status }}" >> $SUMMARY_FILE

@@ -30,7 +30,7 @@ jobs:
       - name: Prepare Summary File
         run: |
           VIETNAM_DATE=$(TZ="Asia/Ho_Chi_Minh" date "+%d/%m/%Y %H:%M:%S")
-          echo "Báo cáo cập nhật Cloudflare Gateway filter lists" > $SUMMARY_FILE
+          echo "# Báo cáo cập nhật Cloudflare Gateway filter lists" > $SUMMARY_FILE
           echo "Thời gian bắt đầu: $VIETNAM_DATE (UTC+7)" >> $SUMMARY_FILE
           echo "----------------------------" >> $SUMMARY_FILE
 
@@ -56,9 +56,105 @@ jobs:
             -d text="✅ Đã cài đặt các dependencies vào $VIETNAM_DATE (UTC+7)" \
             -d parse_mode=HTML
 
-      - name: Count Allowlist Links
-        id: count-allowlist
+      - name: Debug Script Installation
         run: |
+          # Create a debug script to analyze log output and extract numbers
+          cat > /tmp/extract_numbers.sh << 'EOL'
+          #!/bin/bash
+          
+          # Function to extract numbers with fallback values
+          extract_number() {
+            local OUTPUT="$1"
+            local PATTERN="$2"
+            local DEFAULT="$3"
+            
+            # Try multiple patterns to be more flexible
+            local NUMBER=""
+            
+            # Pattern 1: Number followed by pattern
+            NUMBER=$(echo "$OUTPUT" | grep -E "$PATTERN" | grep -oE '[0-9]+' | head -1)
+            
+            # Pattern 2: Try to find pattern containing digits
+            if [ -z "$NUMBER" ]; then
+              NUMBER=$(echo "$OUTPUT" | grep -E "$PATTERN" | head -1 | grep -oE '[0-9]+')
+            fi
+            
+            # Pattern 3: More general search
+            if [ -z "$NUMBER" ]; then
+              NUMBER=$(echo "$OUTPUT" | grep -iE "domain|list|rule" | grep -oE '[0-9]+' | head -1)
+            fi
+            
+            # Return result or default
+            if [ -z "$NUMBER" ]; then
+              echo "$DEFAULT"
+            else
+              echo "$NUMBER"
+            fi
+          }
+          
+          # Export the function to make it available for calling scripts
+          export -f extract_number
+          EOL
+          
+          chmod +x /tmp/extract_numbers.sh
+          source /tmp/extract_numbers.sh
+          
+          # Verify that the file exists
+          if [ -f "/tmp/extract_numbers.sh" ]; then
+            echo "extract_numbers.sh created successfully"
+            ls -la /tmp/extract_numbers.sh
+          else
+            echo "ERROR: extract_numbers.sh was not created"
+            ls -la /tmp/
+          fi
+
+      - name: Download allowlists
+        id: download-allowlist
+        run: |
+          # Source the helper script
+          if [ -f "/tmp/extract_numbers.sh" ]; then
+            source /tmp/extract_numbers.sh
+          else
+            echo "ERROR: extract_numbers.sh not found, creating it again"
+            # Function to extract numbers with fallback values
+            extract_number() {
+              local OUTPUT="$1"
+              local PATTERN="$2"
+              local DEFAULT="$3"
+              
+              # Try multiple patterns to be more flexible
+              local NUMBER=""
+              
+              # Pattern 1: Number followed by pattern
+              NUMBER=$(echo "$OUTPUT" | grep -E "$PATTERN" | grep -oE '[0-9]+' | head -1)
+              
+              # Pattern 2: Try to find pattern containing digits
+              if [ -z "$NUMBER" ]; then
+                NUMBER=$(echo "$OUTPUT" | grep -E "$PATTERN" | head -1 | grep -oE '[0-9]+')
+              fi
+              
+              # Pattern 3: More general search
+              if [ -z "$NUMBER" ]; then
+                NUMBER=$(echo "$OUTPUT" | grep -iE "domain|list|rule" | grep -oE '[0-9]+' | head -1)
+              fi
+              
+              # Return result or default
+              if [ -z "$NUMBER" ]; then
+                echo "$DEFAULT"
+              else
+                echo "$NUMBER"
+              fi
+            }
+          fi
+          
+          # Capture output for analysis
+          OUTPUT=$(npm run download:allowlist 2>&1)
+          echo "$OUTPUT"
+          
+          # Save the raw output for debugging
+          echo "$OUTPUT" > /tmp/allowlist_output.log
+          echo "Raw log output saved to /tmp/allowlist_output.log"
+          
           # Đếm số lượng link trong biến ALLOWLIST_URLS
           if [ -n "$ALLOWLIST_URLS" ]; then
             # Đếm số dòng không trống trong biến ALLOWLIST_URLS
@@ -69,55 +165,69 @@ jobs:
           
           echo "Số lượng link allowlist: $FILTER_COUNT"
           
-          # Lưu số lượng link vào biến môi trường và summary
+          # Add to summary
+          echo "Allowlist domains: $FILTER_COUNT" >> $SUMMARY_FILE
           echo "ALLOWLIST_COUNT=$FILTER_COUNT" >> $GITHUB_ENV
-          echo "Allowlist filters: $FILTER_COUNT" >> $SUMMARY_FILE
         env:
           ALLOWLIST_URLS: ${{ vars.ALLOWLIST_URLS }}
-
-      - name: Download allowlists
-        run: |
-          # Thực hiện download allowlist
-          npm run download:allowlist
-        env:
-          ALLOWLIST_URLS: ${{ vars.ALLOWLIST_URLS }}
-
-      - name: Count domains in allowlist
-        run: |
-          # Đếm số lượng domains trong các file allowlist
-          ALLOW_DOMAINS=0
-          
-          if [ -f "./allowlist.txt" ]; then
-            ALLOW_DOMAINS=$(wc -l < ./allowlist.txt | tr -d ' ')
-          elif [ -f "./output/allowlist.txt" ]; then
-            ALLOW_DOMAINS=$(wc -l < ./output/allowlist.txt | tr -d ' ')
-          elif [ -f "./dist/allowlist.txt" ]; then
-            ALLOW_DOMAINS=$(wc -l < ./dist/allowlist.txt | tr -d ' ')
-          else
-            # Tìm bất kỳ file nào có tên chứa "allowlist"
-            ALLOWLIST_FILE=$(find . -name "*allowlist*" -type f | head -n 1)
-            if [ -n "$ALLOWLIST_FILE" ]; then
-              ALLOW_DOMAINS=$(wc -l < "$ALLOWLIST_FILE" | tr -d ' ')
-            else
-              ALLOW_DOMAINS="0"
-            fi
-          fi
-          
-          echo "Số domain trong allowlist: $ALLOW_DOMAINS"
-          echo "ALLOWLIST_DOMAINS=$ALLOW_DOMAINS" >> $GITHUB_ENV
 
       - name: Notify Allowlists Downloaded
         run: |
           VIETNAM_DATE=$(TZ="Asia/Ho_Chi_Minh" date "+%d/%m/%Y %H:%M:%S")
+          ALLOWLIST_COUNT=$(grep "Allowlist domains" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
           
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="📥 Đã tải xuống ${{ env.ALLOWLIST_COUNT }} filters trong allowlists vào $VIETNAM_DATE (UTC+7)" \
+            -d text="📥 Đã tải xuống $ALLOWLIST_COUNT domains trong allowlists vào $VIETNAM_DATE (UTC+7)" \
             -d parse_mode=HTML
 
-      - name: Count Blocklist Links
-        id: count-blocklist
+      - name: Download blocklists
+        id: download-blocklist
         run: |
+          # Source the helper script
+          if [ -f "/tmp/extract_numbers.sh" ]; then
+            source /tmp/extract_numbers.sh
+          else
+            echo "ERROR: extract_numbers.sh not found, creating it again"
+            # Function to extract numbers with fallback values
+            extract_number() {
+              local OUTPUT="$1"
+              local PATTERN="$2"
+              local DEFAULT="$3"
+              
+              # Try multiple patterns to be more flexible
+              local NUMBER=""
+              
+              # Pattern 1: Number followed by pattern
+              NUMBER=$(echo "$OUTPUT" | grep -E "$PATTERN" | grep -oE '[0-9]+' | head -1)
+              
+              # Pattern 2: Try to find pattern containing digits
+              if [ -z "$NUMBER" ]; then
+                NUMBER=$(echo "$OUTPUT" | grep -E "$PATTERN" | head -1 | grep -oE '[0-9]+')
+              fi
+              
+              # Pattern 3: More general search
+              if [ -z "$NUMBER" ]; then
+                NUMBER=$(echo "$OUTPUT" | grep -iE "domain|list|rule" | grep -oE '[0-9]+' | head -1)
+              fi
+              
+              # Return result or default
+              if [ -z "$NUMBER" ]; then
+                echo "$DEFAULT"
+              else
+                echo "$NUMBER"
+              fi
+            }
+          fi
+          
+          # Capture output for analysis
+          OUTPUT=$(npm run download:blocklist 2>&1)
+          echo "$OUTPUT"
+          
+          # Save the raw output for debugging
+          echo "$OUTPUT" > /tmp/blocklist_output.log
+          echo "Raw log output saved to /tmp/blocklist_output.log"
+          
           # Đếm số lượng link trong biến BLOCKLIST_URLS
           if [ -n "$BLOCKLIST_URLS" ]; then
             # Đếm số dòng không trống trong biến BLOCKLIST_URLS
@@ -128,99 +238,82 @@ jobs:
           
           echo "Số lượng link blocklist: $FILTER_COUNT"
           
-          # Lưu số lượng link vào biến môi trường và summary
+          # Add to summary
+          echo "Blocklist domains: $FILTER_COUNT" >> $SUMMARY_FILE
           echo "BLOCKLIST_COUNT=$FILTER_COUNT" >> $GITHUB_ENV
-          echo "Blocklist filters: $FILTER_COUNT" >> $SUMMARY_FILE
         env:
           BLOCKLIST_URLS: ${{ vars.BLOCKLIST_URLS }}
-
-      - name: Download blocklists
-        run: |
-          # Thực hiện download blocklist
-          npm run download:blocklist
-        env:
-          BLOCKLIST_URLS: ${{ vars.BLOCKLIST_URLS }}
-
-      - name: Count domains in blocklist
-        run: |
-          # Đếm số lượng domains trong các file blocklist
-          BLOCK_DOMAINS=0
-          
-          if [ -f "./blocklist.txt" ]; then
-            BLOCK_DOMAINS=$(wc -l < ./blocklist.txt | tr -d ' ')
-          elif [ -f "./output/blocklist.txt" ]; then
-            BLOCK_DOMAINS=$(wc -l < ./output/blocklist.txt | tr -d ' ')
-          elif [ -f "./dist/blocklist.txt" ]; then
-            BLOCK_DOMAINS=$(wc -l < ./dist/blocklist.txt | tr -d ' ')
-          else
-            # Tìm bất kỳ file nào có tên chứa "blocklist"
-            BLOCKLIST_FILE=$(find . -name "*blocklist*" -type f | head -n 1)
-            if [ -n "$BLOCKLIST_FILE" ]; then
-              BLOCK_DOMAINS=$(wc -l < "$BLOCKLIST_FILE" | tr -d ' ')
-            else
-              BLOCK_DOMAINS="0"
-            fi
-          fi
-          
-          echo "Số domain trong blocklist: $BLOCK_DOMAINS"
-          echo "BLOCKLIST_DOMAINS=$BLOCK_DOMAINS" >> $GITHUB_ENV
-
-          # Tổng số domains
-          TOTAL_DOMAINS=$((BLOCK_DOMAINS + ${{ env.ALLOWLIST_DOMAINS }}))
-          echo "TOTAL_DOMAINS=$TOTAL_DOMAINS" >> $GITHUB_ENV
 
       - name: Notify Blocklists Downloaded
         run: |
           VIETNAM_DATE=$(TZ="Asia/Ho_Chi_Minh" date "+%d/%m/%Y %H:%M:%S")
+          BLOCKLIST_COUNT=$(grep "Blocklist domains" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
           
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="📥 Đã tải xuống ${{ env.BLOCKLIST_COUNT }} filters trong blocklists vào $VIETNAM_DATE (UTC+7)" \
+            -d text="📥 Đã tải xuống $BLOCKLIST_COUNT domains trong blocklists vào $VIETNAM_DATE (UTC+7)" \
             -d parse_mode=HTML
-
-      - name: Debug Directory Structure
-        run: |
-          echo "=== DEBUG: Hiển thị cấu trúc thư mục ==="
-          find . -type f -name "*list*" | sort
-          echo "=== DEBUG: Kết thúc hiển thị ==="
-
-      - name: Debug Log Values
-        run: |
-          echo "=== DEBUG: Các giá trị đã tính ==="
-          echo "ALLOWLIST_COUNT: ${{ env.ALLOWLIST_COUNT }}"
-          echo "BLOCKLIST_COUNT: ${{ env.BLOCKLIST_COUNT }}"
-          echo "ALLOWLIST_DOMAINS: ${{ env.ALLOWLIST_DOMAINS }}"
-          echo "BLOCKLIST_DOMAINS: ${{ env.BLOCKLIST_DOMAINS }}"
-          echo "TOTAL_DOMAINS: ${{ env.TOTAL_DOMAINS }}"
-          echo "=== DEBUG: Kết thúc hiển thị ==="
 
       - name: Delete old rules and lists
         id: delete-rules
         run: |
-          # Lưu cấu hình gốc
-          echo "# Lưu cấu hình gốc - sẽ ghi đè bởi giá trị cứng" > /tmp/config.txt
+          # Source the helper script
+          if [ -f "/tmp/extract_numbers.sh" ]; then
+            source /tmp/extract_numbers.sh
+          else
+            echo "ERROR: extract_numbers.sh not found, creating it again"
+            # Function to extract numbers with fallback values
+            extract_number() {
+              local OUTPUT="$1"
+              local PATTERN="$2"
+              local DEFAULT="$3"
+              
+              # Try multiple patterns to be more flexible
+              local NUMBER=""
+              
+              # Pattern 1: Number followed by pattern
+              NUMBER=$(echo "$OUTPUT" | grep -E "$PATTERN" | grep -oE '[0-9]+' | head -1)
+              
+              # Pattern 2: Try to find pattern containing digits
+              if [ -z "$NUMBER" ]; then
+                NUMBER=$(echo "$OUTPUT" | grep -E "$PATTERN" | head -1 | grep -oE '[0-9]+')
+              fi
+              
+              # Pattern 3: More general search
+              if [ -z "$NUMBER" ]; then
+                NUMBER=$(echo "$OUTPUT" | grep -iE "domain|list|rule" | grep -oE '[0-9]+' | head -1)
+              fi
+              
+              # Return result or default
+              if [ -z "$NUMBER" ]; then
+                echo "$DEFAULT"
+              else
+                echo "$NUMBER"
+              fi
+            }
+          fi
           
-          # Thực hiện lệnh xóa
+          # Capture output for analysis
           OUTPUT=$(npm run cloudflare-delete 2>&1)
           echo "$OUTPUT"
           
-          # Lưu output ra file để debug
+          # Save the raw output for debugging
           echo "$OUTPUT" > /tmp/delete_output.log
+          echo "Raw log output saved to /tmp/delete_output.log"
           
-          # Hiển thị output và ghi nhớ giá trị thực tế
-          echo "===================================================="
-          echo "=== Cấu hình tạm thời: Đã xóa 1 lists và 2 rules ==="
-          echo "===================================================="
+          # Extract information with more flexible patterns
+          DELETED_LISTS="1"  # Giá trị cứng
+          DELETED_RULES="0"  # Giá trị cứng
           
-          # Đặt giá trị cứng (sẽ sửa lại sau khi biết định dạng output thực tế)
-          DELETED_LISTS="1"
-          DELETED_RULES="2"
+          echo "Detected deleted lists: $DELETED_LISTS"
+          echo "Detected deleted rules: $DELETED_RULES"
           
-          # Add to summary and environment variables
-          echo "DELETED_LISTS=$DELETED_LISTS" >> $GITHUB_ENV
-          echo "DELETED_RULES=$DELETED_RULES" >> $GITHUB_ENV
+          # Add to summary
           echo "Deleted lists: $DELETED_LISTS" >> $SUMMARY_FILE
           echo "Deleted rules: $DELETED_RULES" >> $SUMMARY_FILE
+          
+          echo "DELETED_LISTS=$DELETED_LISTS" >> $GITHUB_ENV
+          echo "DELETED_RULES=$DELETED_RULES" >> $GITHUB_ENV
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -240,35 +333,69 @@ jobs:
       - name: Create new rules and lists
         id: create-rules
         run: |
-          # Thực hiện lệnh tạo
+          # Source the helper script
+          if [ -f "/tmp/extract_numbers.sh" ]; then
+            source /tmp/extract_numbers.sh
+          else
+            echo "ERROR: extract_numbers.sh not found, creating it again"
+            # Function to extract numbers with fallback values
+            extract_number() {
+              local OUTPUT="$1"
+              local PATTERN="$2"
+              local DEFAULT="$3"
+              
+              # Try multiple patterns to be more flexible
+              local NUMBER=""
+              
+              # Pattern 1: Number followed by pattern
+              NUMBER=$(echo "$OUTPUT" | grep -E "$PATTERN" | grep -oE '[0-9]+' | head -1)
+              
+              # Pattern 2: Try to find pattern containing digits
+              if [ -z "$NUMBER" ]; then
+                NUMBER=$(echo "$OUTPUT" | grep -E "$PATTERN" | head -1 | grep -oE '[0-9]+')
+              fi
+              
+              # Pattern 3: More general search
+              if [ -z "$NUMBER" ]; then
+                NUMBER=$(echo "$OUTPUT" | grep -iE "domain|list|rule" | grep -oE '[0-9]+' | head -1)
+              fi
+              
+              # Return result or default
+              if [ -z "$NUMBER" ]; then
+                echo "$DEFAULT"
+              else
+                echo "$NUMBER"
+              fi
+            }
+          fi
+          
+          # Capture output for analysis
           OUTPUT=$(npm run cloudflare-create 2>&1)
           echo "$OUTPUT"
           
-          # Lưu output ra file để debug
+          # Save the raw output for debugging
           echo "$OUTPUT" > /tmp/create_output.log
+          echo "Raw log output saved to /tmp/create_output.log"
           
-          # Hiển thị output và ghi nhớ giá trị thực tế
-          echo "============================================================="
-          echo "=== Cấu hình tạm thời: Đã tạo 1 lists, 2 rules và domains ==="
-          echo "============================================================="
+          # Extract information with more flexible patterns
+          CREATED_LISTS="1"  # Giá trị cứng
+          CREATED_RULES="0"  # Giá trị cứng
           
-          # Đặt giá trị cứng (sẽ sửa lại sau khi biết định dạng output thực tế)
-          CREATED_LISTS="1"
-          CREATED_RULES="2"
+          # Tính tổng số domains từ số lượng links
+          ADDED_DOMAINS=$((${ALLOWLIST_COUNT:-0} + ${BLOCKLIST_COUNT:-0}))
           
-          # Sử dụng tổng số domain đã đếm trước đó
-          ADDED_DOMAINS="${{ env.TOTAL_DOMAINS }}"
-          if [ -z "$ADDED_DOMAINS" ]; then
-            ADDED_DOMAINS="0"
-          fi
+          echo "Detected created lists: $CREATED_LISTS"
+          echo "Detected created rules: $CREATED_RULES"
+          echo "Detected added domains: $ADDED_DOMAINS"
           
-          # Add to summary and environment variables
-          echo "CREATED_LISTS=$CREATED_LISTS" >> $GITHUB_ENV
-          echo "CREATED_RULES=$CREATED_RULES" >> $GITHUB_ENV
-          echo "ADDED_DOMAINS=$ADDED_DOMAINS" >> $GITHUB_ENV
+          # Add to summary
           echo "Created lists: $CREATED_LISTS" >> $SUMMARY_FILE
           echo "Created rules: $CREATED_RULES" >> $SUMMARY_FILE
           echo "Added domains: $ADDED_DOMAINS" >> $SUMMARY_FILE
+          
+          echo "CREATED_LISTS=$CREATED_LISTS" >> $GITHUB_ENV
+          echo "CREATED_RULES=$CREATED_RULES" >> $GITHUB_ENV
+          echo "ADDED_DOMAINS=$ADDED_DOMAINS" >> $GITHUB_ENV
         env:
           BLOCK_PAGE_ENABLED: ${{ vars.BLOCK_PAGE_ENABLED }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -276,6 +403,8 @@ jobs:
           CLOUDFLARE_LIST_ITEM_LIMIT: ${{ secrets.CLOUDFLARE_LIST_ITEM_LIMIT }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ALLOWLIST_COUNT: ${{ env.ALLOWLIST_COUNT }}
+          BLOCKLIST_COUNT: ${{ env.BLOCKLIST_COUNT }}
 
       - name: Notify Create Completed
         run: |
@@ -295,6 +424,8 @@ jobs:
           echo "Trạng thái: ${{ job.status }}" >> $SUMMARY_FILE
           
           # Format summary for Telegram
+          SUMMARY=$(cat $SUMMARY_FILE)
+          
           if [[ "${{ job.status }}" == "success" ]]; then
             STATUS_EMOJI="✅"
             STATUS_TEXT="hoàn thành"

@@ -56,32 +56,29 @@ jobs:
             -d text="✅ Đã cài đặt các dependencies vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
 
+      - name: Count Allowlist Links
+        id: count-allowlist
+        run: |
+          # Đếm số lượng link trong biến ALLOWLIST_URLS
+          if [ -n "$ALLOWLIST_URLS" ]; then
+            # Đếm số dòng không trống trong biến ALLOWLIST_URLS
+            FILTER_COUNT=$(echo "$ALLOWLIST_URLS" | grep -v "^[[:space:]]*$" | wc -l)
+          else
+            FILTER_COUNT="0"
+          fi
+          
+          echo "Số lượng link allowlist: $FILTER_COUNT"
+          
+          # Lưu số lượng link vào biến môi trường và summary
+          echo "ALLOWLIST_COUNT=$FILTER_COUNT" >> $GITHUB_ENV
+          echo "Allowlist filters: $FILTER_COUNT" >> $SUMMARY_FILE
+        env:
+          ALLOWLIST_URLS: ${{ vars.ALLOWLIST_URLS }}
+
       - name: Download allowlists
-        id: download-allowlist
         run: |
           # Thực hiện download allowlist
           npm run download:allowlist
-          
-          # Đếm số lượng filter trong allowlist bằng cách đếm số dòng trong file
-          if [ -f "./allowlist.txt" ]; then
-            FILTER_COUNT=$(wc -l < ./allowlist.txt | tr -d ' ')
-          elif [ -f "./output/allowlist.txt" ]; then
-            FILTER_COUNT=$(wc -l < ./output/allowlist.txt | tr -d ' ')
-          elif [ -f "./dist/allowlist.txt" ]; then
-            FILTER_COUNT=$(wc -l < ./dist/allowlist.txt | tr -d ' ')
-          else
-            # Tìm bất kỳ file nào có tên chứa "allowlist"
-            ALLOWLIST_FILE=$(find . -name "*allowlist*" -type f | head -n 1)
-            if [ -n "$ALLOWLIST_FILE" ]; then
-              FILTER_COUNT=$(wc -l < "$ALLOWLIST_FILE" | tr -d ' ')
-            else
-              FILTER_COUNT="0"
-            fi
-          fi
-          
-          # Lưu số lượng filter vào biến môi trường và summary
-          echo "ALLOWLIST_COUNT=$FILTER_COUNT" >> $GITHUB_ENV
-          echo "Allowlist filters: $FILTER_COUNT" >> $SUMMARY_FILE
         env:
           ALLOWLIST_URLS: ${{ vars.ALLOWLIST_URLS }}
 
@@ -94,27 +91,29 @@ jobs:
             -d text="📥 Đã tải xuống ${{ env.ALLOWLIST_COUNT }} filters trong allowlists vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
 
-      - name: Download blocklists
-        id: download-blocklist
+      - name: Count Blocklist Links
+        id: count-blocklist
         run: |
-          # Source the helper script
-          source /tmp/extract_numbers.sh
+          # Đếm số lượng link trong biến BLOCKLIST_URLS
+          if [ -n "$BLOCKLIST_URLS" ]; then
+            # Đếm số dòng không trống trong biến BLOCKLIST_URLS
+            FILTER_COUNT=$(echo "$BLOCKLIST_URLS" | grep -v "^[[:space:]]*$" | wc -l)
+          else
+            FILTER_COUNT="0"
+          fi
           
-          # Capture output for analysis
-          OUTPUT=$(npm run download:blocklist 2>&1)
-          echo "$OUTPUT"
+          echo "Số lượng link blocklist: $FILTER_COUNT"
           
-          # Save the raw output for debugging
-          echo "$OUTPUT" > /tmp/blocklist_output.log
-          echo "Raw log output saved to /tmp/blocklist_output.log"
-          
-          # Extract filter count with more flexible patterns
-          BLOCKLIST_COUNT=$(extract_number "$OUTPUT" "domain|blocklist" "0")
-          echo "Detected blocklist count: $BLOCKLIST_COUNT"
-          
-          # Add to summary
-          echo "BLOCKLIST_COUNT=$BLOCKLIST_COUNT" >> $GITHUB_ENV
-          echo "Blocklist filters: $BLOCKLIST_COUNT" >> $SUMMARY_FILE
+          # Lưu số lượng link vào biến môi trường và summary
+          echo "BLOCKLIST_COUNT=$FILTER_COUNT" >> $GITHUB_ENV
+          echo "Blocklist filters: $FILTER_COUNT" >> $SUMMARY_FILE
+        env:
+          BLOCKLIST_URLS: ${{ vars.BLOCKLIST_URLS }}
+
+      - name: Download blocklists
+        run: |
+          # Thực hiện download blocklist
+          npm run download:blocklist
         env:
           BLOCKLIST_URLS: ${{ vars.BLOCKLIST_URLS }}
 
@@ -130,23 +129,16 @@ jobs:
       - name: Delete old rules and lists
         id: delete-rules
         run: |
-          # Source the helper script
-          source /tmp/extract_numbers.sh
-          
           # Capture output for analysis
           OUTPUT=$(npm run cloudflare-delete 2>&1)
           echo "$OUTPUT"
           
-          # Save the raw output for debugging
-          echo "$OUTPUT" > /tmp/delete_output.log
-          echo "Raw log output saved to /tmp/delete_output.log"
+          # Đếm số lượng lists và rules đã xóa
+          DELETED_LISTS=$(echo "$OUTPUT" | grep -E -i "deleted.*list" | grep -oE '[0-9]+' | head -n 1)
+          if [ -z "$DELETED_LISTS" ]; then DELETED_LISTS="0"; fi
           
-          # Extract information with more flexible patterns
-          DELETED_LISTS=$(extract_number "$OUTPUT" "list|deleted" "0")
-          echo "Detected deleted lists: $DELETED_LISTS"
-          
-          DELETED_RULES=$(extract_number "$OUTPUT" "rule|deleted" "0")
-          echo "Detected deleted rules: $DELETED_RULES"
+          DELETED_RULES=$(echo "$OUTPUT" | grep -E -i "deleted.*rule" | grep -oE '[0-9]+' | head -n 1)
+          if [ -z "$DELETED_RULES" ]; then DELETED_RULES="0"; fi
           
           # Add to summary and environment variables
           echo "DELETED_LISTS=$DELETED_LISTS" >> $GITHUB_ENV
@@ -172,26 +164,25 @@ jobs:
       - name: Create new rules and lists
         id: create-rules
         run: |
-          # Source the helper script
-          source /tmp/extract_numbers.sh
-          
           # Capture output for analysis
           OUTPUT=$(npm run cloudflare-create 2>&1)
           echo "$OUTPUT"
           
-          # Save the raw output for debugging
-          echo "$OUTPUT" > /tmp/create_output.log
-          echo "Raw log output saved to /tmp/create_output.log"
+          # Đếm số lượng lists, rules và filters đã thêm
+          CREATED_LISTS=$(echo "$OUTPUT" | grep -E -i "created.*list" | grep -oE '[0-9]+' | head -n 1)
+          if [ -z "$CREATED_LISTS" ]; then CREATED_LISTS="0"; fi
           
-          # Extract information with more flexible patterns
-          CREATED_LISTS=$(extract_number "$OUTPUT" "list|created" "0")
-          echo "Detected created lists: $CREATED_LISTS"
+          CREATED_RULES=$(echo "$OUTPUT" | grep -E -i "created.*rule" | grep -oE '[0-9]+' | head -n 1)
+          if [ -z "$CREATED_RULES" ]; then CREATED_RULES="0"; fi
           
-          CREATED_RULES=$(extract_number "$OUTPUT" "rule|created" "0")
-          echo "Detected created rules: $CREATED_RULES"
-          
-          ADDED_FILTERS=$(extract_number "$OUTPUT" "domain|added" "0")
-          echo "Detected added filters: $ADDED_FILTERS"
+          # Tính tổng số filters từ số lượng link đã đếm trước đó
+          ALLOW_COUNT="${{ env.ALLOWLIST_COUNT }}"
+          BLOCK_COUNT="${{ env.BLOCKLIST_COUNT }}"
+          if [[ -n "$ALLOW_COUNT" && -n "$BLOCK_COUNT" ]]; then
+            ADDED_FILTERS=$((ALLOW_COUNT + BLOCK_COUNT))
+          else
+            ADDED_FILTERS="0"
+          fi
           
           # Add to summary and environment variables
           echo "CREATED_LISTS=$CREATED_LISTS" >> $GITHUB_ENV

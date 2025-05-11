@@ -82,6 +82,30 @@ jobs:
         env:
           ALLOWLIST_URLS: ${{ vars.ALLOWLIST_URLS }}
 
+      - name: Count domains in allowlist
+        run: |
+          # Đếm số lượng domains trong các file allowlist
+          ALLOW_DOMAINS=0
+          
+          if [ -f "./allowlist.txt" ]; then
+            ALLOW_DOMAINS=$(wc -l < ./allowlist.txt | tr -d ' ')
+          elif [ -f "./output/allowlist.txt" ]; then
+            ALLOW_DOMAINS=$(wc -l < ./output/allowlist.txt | tr -d ' ')
+          elif [ -f "./dist/allowlist.txt" ]; then
+            ALLOW_DOMAINS=$(wc -l < ./dist/allowlist.txt | tr -d ' ')
+          else
+            # Tìm bất kỳ file nào có tên chứa "allowlist"
+            ALLOWLIST_FILE=$(find . -name "*allowlist*" -type f | head -n 1)
+            if [ -n "$ALLOWLIST_FILE" ]; then
+              ALLOW_DOMAINS=$(wc -l < "$ALLOWLIST_FILE" | tr -d ' ')
+            else
+              ALLOW_DOMAINS="0"
+            fi
+          fi
+          
+          echo "Số domain trong allowlist: $ALLOW_DOMAINS"
+          echo "ALLOWLIST_DOMAINS=$ALLOW_DOMAINS" >> $GITHUB_ENV
+
       - name: Notify Allowlists Downloaded
         run: |
           VIETNAM_DATE=$(TZ="Asia/Ho_Chi_Minh" date "+%d/%m/%Y %H:%M:%S")
@@ -117,6 +141,34 @@ jobs:
         env:
           BLOCKLIST_URLS: ${{ vars.BLOCKLIST_URLS }}
 
+      - name: Count domains in blocklist
+        run: |
+          # Đếm số lượng domains trong các file blocklist
+          BLOCK_DOMAINS=0
+          
+          if [ -f "./blocklist.txt" ]; then
+            BLOCK_DOMAINS=$(wc -l < ./blocklist.txt | tr -d ' ')
+          elif [ -f "./output/blocklist.txt" ]; then
+            BLOCK_DOMAINS=$(wc -l < ./output/blocklist.txt | tr -d ' ')
+          elif [ -f "./dist/blocklist.txt" ]; then
+            BLOCK_DOMAINS=$(wc -l < ./dist/blocklist.txt | tr -d ' ')
+          else
+            # Tìm bất kỳ file nào có tên chứa "blocklist"
+            BLOCKLIST_FILE=$(find . -name "*blocklist*" -type f | head -n 1)
+            if [ -n "$BLOCKLIST_FILE" ]; then
+              BLOCK_DOMAINS=$(wc -l < "$BLOCKLIST_FILE" | tr -d ' ')
+            else
+              BLOCK_DOMAINS="0"
+            fi
+          fi
+          
+          echo "Số domain trong blocklist: $BLOCK_DOMAINS"
+          echo "BLOCKLIST_DOMAINS=$BLOCK_DOMAINS" >> $GITHUB_ENV
+
+          # Tổng số domains
+          TOTAL_DOMAINS=$((BLOCK_DOMAINS + ${{ env.ALLOWLIST_DOMAINS }}))
+          echo "TOTAL_DOMAINS=$TOTAL_DOMAINS" >> $GITHUB_ENV
+
       - name: Notify Blocklists Downloaded
         run: |
           VIETNAM_DATE=$(TZ="Asia/Ho_Chi_Minh" date "+%d/%m/%Y %H:%M:%S")
@@ -125,6 +177,22 @@ jobs:
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
             -d text="📥 Đã tải xuống ${{ env.BLOCKLIST_COUNT }} filters trong blocklists vào $VIETNAM_DATE (UTC+7)" \
             -d parse_mode=HTML
+
+      - name: Debug Directory Structure
+        run: |
+          echo "=== DEBUG: Hiển thị cấu trúc thư mục ==="
+          find . -type f -name "*list*" | sort
+          echo "=== DEBUG: Kết thúc hiển thị ==="
+
+      - name: Debug Log Values
+        run: |
+          echo "=== DEBUG: Các giá trị đã tính ==="
+          echo "ALLOWLIST_COUNT: ${{ env.ALLOWLIST_COUNT }}"
+          echo "BLOCKLIST_COUNT: ${{ env.BLOCKLIST_COUNT }}"
+          echo "ALLOWLIST_DOMAINS: ${{ env.ALLOWLIST_DOMAINS }}"
+          echo "BLOCKLIST_DOMAINS: ${{ env.BLOCKLIST_DOMAINS }}"
+          echo "TOTAL_DOMAINS: ${{ env.TOTAL_DOMAINS }}"
+          echo "=== DEBUG: Kết thúc hiển thị ==="
 
       - name: Delete old rules and lists
         id: delete-rules
@@ -141,12 +209,26 @@ jobs:
           cat /tmp/delete_output.log
           echo "=============================================="
           
-          # Đếm số lượng lists và rules đã xóa từ output
-          DELETED_LISTS=$(echo "$OUTPUT" | grep -i -E "(deleted|removed).*lists?" | grep -oE '[0-9]+' | head -n 1)
-          DELETED_RULES=$(echo "$OUTPUT" | grep -i -E "(deleted|removed).*rules?" | grep -oE '[0-9]+' | head -n 1)
+          # Pattern mạnh hơn để tìm số lượng lists và rules
+          if [[ "$OUTPUT" =~ [Dd]eleted[[:space:]]+([0-9]+)[[:space:]]+lists ]]; then
+            DELETED_LISTS=${BASH_REMATCH[1]}
+          elif [[ "$OUTPUT" =~ [Dd]eleted:[[:space:]]+([0-9]+)[[:space:]]*(gateway[[:space:]]*)?lists ]]; then
+            DELETED_LISTS=${BASH_REMATCH[1]}
+          elif [[ "$OUTPUT" =~ ([0-9]+)[[:space:]]*(gateway[[:space:]]*)?lists?[[:space:]]*deleted ]]; then
+            DELETED_LISTS=${BASH_REMATCH[1]}
+          else
+            DELETED_LISTS="0"
+          fi
           
-          if [ -z "$DELETED_LISTS" ]; then DELETED_LISTS="0"; fi
-          if [ -z "$DELETED_RULES" ]; then DELETED_RULES="0"; fi
+          if [[ "$OUTPUT" =~ [Dd]eleted[[:space:]]+([0-9]+)[[:space:]]+rules ]]; then
+            DELETED_RULES=${BASH_REMATCH[1]}
+          elif [[ "$OUTPUT" =~ [Dd]eleted:[[:space:]]+([0-9]+)[[:space:]]*(gateway[[:space:]]*)?rules ]]; then
+            DELETED_RULES=${BASH_REMATCH[1]}
+          elif [[ "$OUTPUT" =~ ([0-9]+)[[:space:]]*(gateway[[:space:]]*)?rules?[[:space:]]*deleted ]]; then
+            DELETED_RULES=${BASH_REMATCH[1]}
+          else
+            DELETED_RULES="0"
+          fi
           
           echo "DEBUG: DELETED_LISTS=$DELETED_LISTS, DELETED_RULES=$DELETED_RULES"
           
@@ -186,23 +268,31 @@ jobs:
           cat /tmp/create_output.log
           echo "=============================================="
           
-          # Đếm số lượng lists, rules và domains đã thêm từ output
-          CREATED_LISTS=$(echo "$OUTPUT" | grep -i -E "created.*lists?" | grep -oE '[0-9]+' | head -n 1)
-          CREATED_RULES=$(echo "$OUTPUT" | grep -i -E "created.*rules?" | grep -oE '[0-9]+' | head -n 1)
-          ADDED_DOMAINS=$(echo "$OUTPUT" | grep -i -E "added.*domains?" | grep -oE '[0-9]+' | head -n 1)
+          # Pattern mạnh hơn để tìm số lượng lists và rules
+          if [[ "$OUTPUT" =~ [Cc]reated[[:space:]]+([0-9]+)[[:space:]]+lists ]]; then
+            CREATED_LISTS=${BASH_REMATCH[1]}
+          elif [[ "$OUTPUT" =~ [Cc]reated:[[:space:]]+([0-9]+)[[:space:]]*(gateway[[:space:]]*)?lists ]]; then
+            CREATED_LISTS=${BASH_REMATCH[1]}
+          elif [[ "$OUTPUT" =~ ([0-9]+)[[:space:]]*(gateway[[:space:]]*)?lists?[[:space:]]*created ]]; then
+            CREATED_LISTS=${BASH_REMATCH[1]}
+          else
+            CREATED_LISTS="0"
+          fi
           
-          if [ -z "$CREATED_LISTS" ]; then CREATED_LISTS="0"; fi
-          if [ -z "$CREATED_RULES" ]; then CREATED_RULES="0"; fi
+          if [[ "$OUTPUT" =~ [Cc]reated[[:space:]]+([0-9]+)[[:space:]]+rules ]]; then
+            CREATED_RULES=${BASH_REMATCH[1]}
+          elif [[ "$OUTPUT" =~ [Cc]reated:[[:space:]]+([0-9]+)[[:space:]]*(gateway[[:space:]]*)?rules ]]; then
+            CREATED_RULES=${BASH_REMATCH[1]}
+          elif [[ "$OUTPUT" =~ ([0-9]+)[[:space:]]*(gateway[[:space:]]*)?rules?[[:space:]]*created ]]; then
+            CREATED_RULES=${BASH_REMATCH[1]}
+          else
+            CREATED_RULES="0"
+          fi
           
-          # Nếu không tìm thấy số domains từ output, tính tổng số filters đã đếm
+          # Sử dụng tổng số domains đã đếm trước đó
+          ADDED_DOMAINS="${{ env.TOTAL_DOMAINS }}"
           if [ -z "$ADDED_DOMAINS" ]; then
-            ALLOW_COUNT="${{ env.ALLOWLIST_COUNT }}"
-            BLOCK_COUNT="${{ env.BLOCKLIST_COUNT }}"
-            if [[ -n "$ALLOW_COUNT" && -n "$BLOCK_COUNT" ]]; then
-              ADDED_DOMAINS=$((ALLOW_COUNT + BLOCK_COUNT))
-            else
-              ADDED_DOMAINS="0"
-            fi
+            ADDED_DOMAINS="0"
           fi
           
           echo "DEBUG: CREATED_LISTS=$CREATED_LISTS, CREATED_RULES=$CREATED_RULES, ADDED_DOMAINS=$ADDED_DOMAINS"
@@ -214,7 +304,6 @@ jobs:
           echo "Created lists: $CREATED_LISTS" >> $SUMMARY_FILE
           echo "Created rules: $CREATED_RULES" >> $SUMMARY_FILE
           echo "Added domains: $ADDED_DOMAINS" >> $SUMMARY_FILE
-          echo "Added filters: $ADDED_DOMAINS" >> $SUMMARY_FILE
         env:
           BLOCK_PAGE_ENABLED: ${{ vars.BLOCK_PAGE_ENABLED }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

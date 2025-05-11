@@ -212,11 +212,6 @@ jobs:
           fi
           
           MESSAGE="$STATUS_EMOJI Quá trình cập nhật Cloudflare Gateway filter lists đã $STATUS_TEXT
-
-📊 *Báo cáo tóm tắt:*
-\`\`\`
-$SUMMARY
-\`\`\`"
           
           # Save the final message
           echo "$MESSAGE" > /tmp/final_message.txt

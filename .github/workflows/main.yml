@@ -255,17 +255,7 @@ jobs:
             -d text="🆕 Đã tạo $CREATED_LISTS lists, $CREATED_RULES rules và thêm $ADDED_DOMAINS domains vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
 
-      - name: Upload Log Files as Artifacts
-        if: always()
-        uses: actions/upload-artifact@v3
-        with:
-          name: log-outputs
-          path: |
-            /tmp/allowlist_output.log
-            /tmp/blocklist_output.log
-            /tmp/delete_output.log
-            /tmp/create_output.log
-            /tmp/filter_update_summary.txt
+      # Removed problematic upload-artifact step
 
       - name: Generate Final Summary
         if: always()

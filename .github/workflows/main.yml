@@ -103,7 +103,7 @@ jobs:
           
           BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
           MESSAGE="🗑️ Đã xóa rules và lists cũ vào $BANGKOK_DATE (UTC+7)
-          
+
 Thông tin:
 \`\`\`
 $SUMMARY
@@ -133,7 +133,7 @@ $SUMMARY
           
           BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
           MESSAGE="🆕 Đã tạo rules và lists mới vào $BANGKOK_DATE (UTC+7)
-          
+
 Thông tin:
 \`\`\`
 $SUMMARY

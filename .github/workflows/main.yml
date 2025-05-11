@@ -63,10 +63,6 @@ jobs:
           OUTPUT=$(npm run download:allowlist 2>&1)
           echo "$OUTPUT"
           
-          # Save the raw output for debugging
-          echo "$OUTPUT" > /tmp/allowlist_output.log
-          echo "Raw log output saved to /tmp/allowlist_output.log"
-          
           # Đếm số lượng link trong biến ALLOWLIST_URLS
           if [ -n "$ALLOWLIST_URLS" ]; then
             # Đếm số dòng không trống trong biến ALLOWLIST_URLS
@@ -78,7 +74,7 @@ jobs:
           echo "Số lượng link allowlist: $FILTER_COUNT"
           
           # Add to summary
-          echo "Allowlist domains: $FILTER_COUNT" >> $SUMMARY_FILE
+          echo "Allowlist filters: $FILTER_COUNT" >> $SUMMARY_FILE
           echo "ALLOWLIST_COUNT=$FILTER_COUNT" >> $GITHUB_ENV
           
           # Đếm số lượng domain trong file
@@ -119,10 +115,6 @@ jobs:
           OUTPUT=$(npm run download:blocklist 2>&1)
           echo "$OUTPUT"
           
-          # Save the raw output for debugging
-          echo "$OUTPUT" > /tmp/blocklist_output.log
-          echo "Raw log output saved to /tmp/blocklist_output.log"
-          
           # Đếm số lượng link trong biến BLOCKLIST_URLS
           if [ -n "$BLOCKLIST_URLS" ]; then
             # Đếm số dòng không trống trong biến BLOCKLIST_URLS
@@ -134,7 +126,7 @@ jobs:
           echo "Số lượng link blocklist: $FILTER_COUNT"
           
           # Add to summary
-          echo "Blocklist domains: $FILTER_COUNT" >> $SUMMARY_FILE
+          echo "Blocklist filters: $FILTER_COUNT" >> $SUMMARY_FILE
           echo "BLOCKLIST_COUNT=$FILTER_COUNT" >> $GITHUB_ENV
           
           # Đếm số lượng domain trong file
@@ -172,61 +164,11 @@ jobs:
             -d text="📥 Đã tải xuống ${{ env.BLOCKLIST_COUNT }} filters trong blocklists vào $VIETNAM_DATE (UTC+7)" \
             -d parse_mode=HTML
 
-      - name: Debug Directory Structure
-        run: |
-          echo "=== DEBUG: Hiển thị cấu trúc thư mục ==="
-          find . -type f -name "*list*" | sort
-          echo "=== DEBUG: Kết thúc hiển thị ==="
-
-      - name: Debug Log Values
-        run: |
-          echo "=== DEBUG: Các giá trị đã tính ==="
-          echo "ALLOWLIST_COUNT: ${{ env.ALLOWLIST_COUNT }}"
-          echo "BLOCKLIST_COUNT: ${{ env.BLOCKLIST_COUNT }}"
-          echo "ALLOWLIST_DOMAINS: ${{ env.ALLOWLIST_DOMAINS }}"
-          echo "BLOCKLIST_DOMAINS: ${{ env.BLOCKLIST_DOMAINS }}"
-          echo "TOTAL_DOMAINS: ${{ env.TOTAL_DOMAINS }}"
-          echo "=== DEBUG: Kết thúc hiển thị ==="
-
       - name: Delete old rules and lists
         id: delete-rules
         run: |
-          # Capture output for analysis
-          OUTPUT=$(npm run cloudflare-delete 2>&1)
-          echo "$OUTPUT"
-          
-          # Lưu output ra file để debug
-          echo "$OUTPUT" > /tmp/delete_output.log
-          
-          # Tìm kiếm trong log với các pattern phổ biến
-          DELETED_LISTS=0
-          DELETED_RULES=0
-          
-          # Pattern cho lists
-          if grep -q -i "deleted.*list" /tmp/delete_output.log; then
-            DELETED_LISTS=$(grep -i "deleted.*list" /tmp/delete_output.log | grep -o -E '[0-9]+' | head -1)
-          elif grep -q -i "removed.*list" /tmp/delete_output.log; then
-            DELETED_LISTS=$(grep -i "removed.*list" /tmp/delete_output.log | grep -o -E '[0-9]+' | head -1)
-          fi
-          
-          # Pattern cho rules
-          if grep -q -i "deleted.*rule" /tmp/delete_output.log; then
-            DELETED_RULES=$(grep -i "deleted.*rule" /tmp/delete_output.log | grep -o -E '[0-9]+' | head -1)
-          elif grep -q -i "removed.*rule" /tmp/delete_output.log; then
-            DELETED_RULES=$(grep -i "removed.*rule" /tmp/delete_output.log | grep -o -E '[0-9]+' | head -1)
-          fi
-          
-          # Đảm bảo có giá trị mặc định
-          if [ -z "$DELETED_LISTS" ]; then DELETED_LISTS="0"; fi
-          if [ -z "$DELETED_RULES" ]; then DELETED_RULES="0"; fi
-          
-          echo "DEBUG: DELETED_LISTS=$DELETED_LISTS, DELETED_RULES=$DELETED_RULES"
-          
-          # Add to summary and environment variables
-          echo "DELETED_LISTS=$DELETED_LISTS" >> $GITHUB_ENV
-          echo "DELETED_RULES=$DELETED_RULES" >> $GITHUB_ENV
-          echo "Deleted lists: $DELETED_LISTS" >> $SUMMARY_FILE
-          echo "Deleted rules: $DELETED_RULES" >> $SUMMARY_FILE
+          # Thực hiện lệnh xóa
+          npm run cloudflare-delete
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -234,46 +176,20 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-      - name: Notify Delete Completed
+      - name: Delete Completed Notification
         run: |
           VIETNAM_DATE=$(TZ="Asia/Ho_Chi_Minh" date "+%d/%m/%Y %H:%M:%S")
           
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="🗑️ Đã xóa ${{ env.DELETED_LISTS }} lists và ${{ env.DELETED_RULES }} rules vào $VIETNAM_DATE (UTC+7)" \
+            -d text="🗑️ Đã xóa các filters cũ vào $VIETNAM_DATE (UTC+7)" \
             -d parse_mode=HTML
 
       - name: Create new rules and lists
         id: create-rules
         run: |
           # Thực hiện lệnh tạo
-          OUTPUT=$(npm run cloudflare-create 2>&1)
-          echo "$OUTPUT"
-          
-          # Lưu output ra file để debug
-          echo "$OUTPUT" > /tmp/create_output.log
-          
-          # Tìm kiếm trong log với các pattern phổ biến
-          CREATED_LISTS=0
-          CREATED_RULES=0
-          
-          # Pattern cho lists
-          if grep -q -i "created.*list" /tmp/create_output.log; then
-            CREATED_LISTS=$(grep -i "created.*list" /tmp/create_output.log | grep -o -E '[0-9]+' | head -1)
-          elif grep -q -i "new.*list" /tmp/create_output.log; then
-            CREATED_LISTS=$(grep -i "new.*list" /tmp/create_output.log | grep -o -E '[0-9]+' | head -1)
-          fi
-          
-          # Pattern cho rules
-          if grep -q -i "created.*rule" /tmp/create_output.log; then
-            CREATED_RULES=$(grep -i "created.*rule" /tmp/create_output.log | grep -o -E '[0-9]+' | head -1)
-          elif grep -q -i "new.*rule" /tmp/create_output.log; then
-            CREATED_RULES=$(grep -i "new.*rule" /tmp/create_output.log | grep -o -E '[0-9]+' | head -1)
-          fi
-          
-          # Đảm bảo có giá trị mặc định
-          if [ -z "$CREATED_LISTS" ]; then CREATED_LISTS="0"; fi
-          if [ -z "$CREATED_RULES" ]; then CREATED_RULES="0"; fi
+          npm run cloudflare-create
           
           # Sử dụng tổng số domain đã đếm trước đó
           ADDED_DOMAINS="${{ env.TOTAL_DOMAINS }}"
@@ -281,15 +197,9 @@ jobs:
             ADDED_DOMAINS="0"
           fi
           
-          echo "DEBUG: CREATED_LISTS=$CREATED_LISTS, CREATED_RULES=$CREATED_RULES, ADDED_DOMAINS=$ADDED_DOMAINS"
-          
-          # Add to summary and environment variables
-          echo "CREATED_LISTS=$CREATED_LISTS" >> $GITHUB_ENV
-          echo "CREATED_RULES=$CREATED_RULES" >> $GITHUB_ENV
+          # Add to summary
+          echo "Added filters: $ADDED_DOMAINS" >> $SUMMARY_FILE
           echo "ADDED_DOMAINS=$ADDED_DOMAINS" >> $GITHUB_ENV
-          echo "Created lists: $CREATED_LISTS" >> $SUMMARY_FILE
-          echo "Created rules: $CREATED_RULES" >> $SUMMARY_FILE
-          echo "Added domains: $ADDED_DOMAINS" >> $SUMMARY_FILE
         env:
           BLOCK_PAGE_ENABLED: ${{ vars.BLOCK_PAGE_ENABLED }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -298,13 +208,13 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-      - name: Notify Create Completed
+      - name: Create Completed Notification
         run: |
           VIETNAM_DATE=$(TZ="Asia/Ho_Chi_Minh" date "+%d/%m/%Y %H:%M:%S")
           
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="🆕 Đã tạo ${{ env.CREATED_LISTS }} lists, ${{ env.CREATED_RULES }} rules và thêm ${{ env.ADDED_DOMAINS }} domains vào $VIETNAM_DATE (UTC+7)" \
+            -d text="🆕 Đã thêm ${{ env.ADDED_DOMAINS }} filters vào $VIETNAM_DATE (UTC+7)" \
             -d parse_mode=HTML
 
       - name: Generate Final Summary

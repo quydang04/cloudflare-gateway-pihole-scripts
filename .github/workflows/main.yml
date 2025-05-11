@@ -198,7 +198,7 @@ jobs:
           fi
           
           # Add to summary
-          echo "Added filters: $ADDED_DOMAINS" >> $SUMMARY_FILE
+          echo "Added domains: $ADDED_DOMAINS" >> $SUMMARY_FILE
           echo "ADDED_DOMAINS=$ADDED_DOMAINS" >> $GITHUB_ENV
         env:
           BLOCK_PAGE_ENABLED: ${{ vars.BLOCK_PAGE_ENABLED }}

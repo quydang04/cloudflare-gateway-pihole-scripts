@@ -15,6 +15,7 @@ concurrency:
 
 env:
   NODE_ENV: production
+  SUMMARY_FILE: /tmp/filter_update_summary.txt
 
 jobs:
   cgps:
@@ -26,6 +27,13 @@ jobs:
           repository: "mrrfv/cloudflare-gateway-pihole-scripts"
           ref: "v1"
           
+      - name: Prepare Summary File
+        run: |
+          BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          echo "# Báo cáo cập nhật Cloudflare Gateway filter lists" > $SUMMARY_FILE
+          echo "Thời gian bắt đầu: $BANGKOK_DATE (UTC+7)" >> $SUMMARY_FILE
+          echo "----------------------------" >> $SUMMARY_FILE
+
       - name: Send Start Notification
         run: |
           BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
@@ -49,33 +57,78 @@ jobs:
             -d parse_mode=HTML
 
       - name: Download allowlists
-        run: npm run download:allowlist
+        id: download-allowlist
+        run: |
+          # Capture output for analysis
+          OUTPUT=$(npm run download:allowlist 2>&1)
+          echo "$OUTPUT"
+          
+          # Extract domain count (adjust the grep pattern based on actual output)
+          ALLOWLIST_COUNT=$(echo "$OUTPUT" | grep -oE "[0-9]+ domains" | grep -oE "[0-9]+" | head -1)
+          if [ -z "$ALLOWLIST_COUNT" ]; then
+            ALLOWLIST_COUNT="không xác định"
+          fi
+          
+          # Add to summary
+          echo "Allowlist domains: $ALLOWLIST_COUNT" >> $SUMMARY_FILE
         env:
           ALLOWLIST_URLS: ${{ vars.ALLOWLIST_URLS }}
 
       - name: Notify Allowlists Downloaded
         run: |
           BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          ALLOWLIST_COUNT=$(grep "Allowlist domains" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
+          
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="📥 Đã tải xuống allowlists vào $BANGKOK_DATE (UTC+7)" \
+            -d text="📥 Đã tải xuống $ALLOWLIST_COUNT domains trong allowlists vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
 
       - name: Download blocklists
-        run: npm run download:blocklist
+        id: download-blocklist
+        run: |
+          # Capture output for analysis
+          OUTPUT=$(npm run download:blocklist 2>&1)
+          echo "$OUTPUT"
+          
+          # Extract domain count (adjust the grep pattern based on actual output)
+          BLOCKLIST_COUNT=$(echo "$OUTPUT" | grep -oE "[0-9]+ domains" | grep -oE "[0-9]+" | head -1)
+          if [ -z "$BLOCKLIST_COUNT" ]; then
+            BLOCKLIST_COUNT="không xác định"
+          fi
+          
+          # Add to summary
+          echo "Blocklist domains: $BLOCKLIST_COUNT" >> $SUMMARY_FILE
         env:
           BLOCKLIST_URLS: ${{ vars.BLOCKLIST_URLS }}
 
       - name: Notify Blocklists Downloaded
         run: |
           BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          BLOCKLIST_COUNT=$(grep "Blocklist domains" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
+          
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="📥 Đã tải xuống blocklists vào $BANGKOK_DATE (UTC+7)" \
+            -d text="📥 Đã tải xuống $BLOCKLIST_COUNT domains trong blocklists vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
 
       - name: Delete old rules and lists
-        run: npm run cloudflare-delete
+        id: delete-rules
+        run: |
+          # Capture output for analysis
+          OUTPUT=$(npm run cloudflare-delete 2>&1)
+          echo "$OUTPUT"
+          
+          # Extract information (adjust the grep patterns based on actual output)
+          DELETED_LISTS=$(echo "$OUTPUT" | grep -oE "Deleted [0-9]+ lists" | grep -oE "[0-9]+" | head -1)
+          if [ -z "$DELETED_LISTS" ]; then DELETED_LISTS="0"; fi
+          
+          DELETED_RULES=$(echo "$OUTPUT" | grep -oE "Deleted [0-9]+ rules" | grep -oE "[0-9]+" | head -1)
+          if [ -z "$DELETED_RULES" ]; then DELETED_RULES="0"; fi
+          
+          # Add to summary
+          echo "Deleted lists: $DELETED_LISTS" >> $SUMMARY_FILE
+          echo "Deleted rules: $DELETED_RULES" >> $SUMMARY_FILE
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -86,13 +139,35 @@ jobs:
       - name: Notify Delete Completed
         run: |
           BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          DELETED_LISTS=$(grep "Deleted lists" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
+          DELETED_RULES=$(grep "Deleted rules" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
+          
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="🗑️ Đã xóa rules và lists cũ vào $BANGKOK_DATE (UTC+7)" \
+            -d text="🗑️ Đã xóa $DELETED_LISTS lists và $DELETED_RULES rules vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
 
       - name: Create new rules and lists
-        run: npm run cloudflare-create
+        id: create-rules
+        run: |
+          # Capture output for analysis
+          OUTPUT=$(npm run cloudflare-create 2>&1)
+          echo "$OUTPUT"
+          
+          # Extract information (adjust the grep patterns based on actual output)
+          CREATED_LISTS=$(echo "$OUTPUT" | grep -oE "Created [0-9]+ lists" | grep -oE "[0-9]+" | head -1)
+          if [ -z "$CREATED_LISTS" ]; then CREATED_LISTS="0"; fi
+          
+          CREATED_RULES=$(echo "$OUTPUT" | grep -oE "Created [0-9]+ rules" | grep -oE "[0-9]+" | head -1)
+          if [ -z "$CREATED_RULES" ]; then CREATED_RULES="0"; fi
+          
+          ADDED_DOMAINS=$(echo "$OUTPUT" | grep -oE "Added [0-9]+ domains" | grep -oE "[0-9]+" | head -1)
+          if [ -z "$ADDED_DOMAINS" ]; then ADDED_DOMAINS="0"; fi
+          
+          # Add to summary
+          echo "Created lists: $CREATED_LISTS" >> $SUMMARY_FILE
+          echo "Created rules: $CREATED_RULES" >> $SUMMARY_FILE
+          echo "Added domains: $ADDED_DOMAINS" >> $SUMMARY_FILE
         env:
           BLOCK_PAGE_ENABLED: ${{ vars.BLOCK_PAGE_ENABLED }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -104,26 +179,56 @@ jobs:
       - name: Notify Create Completed
         run: |
           BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          CREATED_LISTS=$(grep "Created lists" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
+          CREATED_RULES=$(grep "Created rules" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
+          ADDED_DOMAINS=$(grep "Added domains" $SUMMARY_FILE | cut -d ":" -f2 | tr -d ' ')
+          
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="🆕 Đã tạo rules và lists mới vào $BANGKOK_DATE (UTC+7)" \
+            -d text="🆕 Đã tạo $CREATED_LISTS lists, $CREATED_RULES rules và thêm $ADDED_DOMAINS domains vào $BANGKOK_DATE (UTC+7)" \
             -d parse_mode=HTML
 
-      - name: Send Final Notification
+      - name: Generate Final Summary
         if: always()
         run: |
           BANGKOK_DATE=$(TZ="Asia/Bangkok" date "+%Y-%m-%d %H:%M:%S")
+          echo "----------------------------" >> $SUMMARY_FILE
+          echo "Thời gian hoàn thành: $BANGKOK_DATE (UTC+7)" >> $SUMMARY_FILE
+          echo "Trạng thái: ${{ job.status }}" >> $SUMMARY_FILE
+          
+          # Calculate execution time if possible
+          START_TIME=$(grep "Thời gian bắt đầu" $SUMMARY_FILE | cut -d ":" -f2- | sed 's/^[ ]*//')
+          END_TIME=$(grep "Thời gian hoàn thành" $SUMMARY_FILE | cut -d ":" -f2- | sed 's/^[ ]*//')
+          
+          # Format summary for Telegram (using Markdown)
+          SUMMARY=$(cat $SUMMARY_FILE)
           
           if [[ "${{ job.status }}" == "success" ]]; then
-            MESSAGE="✅ Hoàn thành cập nhật Cloudflare Gateway filter lists vào $BANGKOK_DATE (UTC+7)"
+            STATUS_EMOJI="✅"
+            STATUS_TEXT="hoàn thành"
           else
-            MESSAGE="⚠️ Không thể cập nhật Cloudflare Gateway filter lists vào $BANGKOK_DATE (UTC+7)"
+            STATUS_EMOJI="⚠️"
+            STATUS_TEXT="thất bại"
           fi
           
+          MESSAGE="$STATUS_EMOJI Quá trình cập nhật Cloudflare Gateway filter lists đã $STATUS_TEXT
+
+📊 *Báo cáo tóm tắt:*
+\`\`\`
+$SUMMARY
+\`\`\`"
+          
+          # Save the final message
+          echo "$MESSAGE" > /tmp/final_message.txt
+
+      - name: Send Final Summary
+        if: always()
+        run: |
+          # Send the full report using Markdown format
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="$MESSAGE" \
-            -d parse_mode=HTML
+            -d text="$(cat /tmp/final_message.txt)" \
+            -d parse_mode=Markdown
 
       - name: Send ping request
         if: env.PING_URL != ''
